@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>宠物养护</title>
+  <style>
+    :root { --ink:#253329; --muted:#738078; --green:#4c8065; --deep:#315740; --cream:#f7f5ec; --paper:#fffef9; --line:#e5e6db; --soft:#e8f1e8; --peach:#fff0df; --shadow:0 16px 40px rgba(48, 77, 58, .08); }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--cream); color:var(--ink); font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    button { font:inherit; cursor:pointer; }
+    .app { max-width:1180px; min-height:100vh; margin:auto; padding:28px 30px 48px; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:30px; }
+    .date { color:var(--muted); font-size:14px; margin:0 0 5px; }
+    h1 { font-size:30px; letter-spacing:-.8px; margin:0; }
+    .icon-btn, .pet-switch { border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:14px; padding:10px 14px; display:inline-flex; align-items:center; gap:8px; }
+    .icon-btn { width:42px; height:42px; justify-content:center; padding:0; position:relative; font-size:18px; }
+    .notice { position:absolute; width:7px; height:7px; border-radius:50%; background:#ed816c; right:10px; top:9px; border:1px solid var(--paper); }
+    .pet-hero { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:25px 27px; border-radius:24px; background:var(--paper); box-shadow:var(--shadow); }
+    .pet-profile { display:flex; align-items:center; gap:18px; min-width:0; }
+    .avatar { width:78px; height:78px; flex:none; display:grid; place-items:center; border-radius:26px; background:var(--soft); font-size:42px; }
+    .pet-name { margin:0; font-size:26px; letter-spacing:-.5px; }
+    .pet-meta { color:var(--muted); margin:6px 0 10px; font-size:14px; }
+    .pill { display:inline-flex; align-items:center; gap:5px; padding:5px 9px; border-radius:99px; background:var(--soft); color:var(--deep); font-size:12px; font-weight:700; }
+    .pet-switch { white-space:nowrap; }
+    .quick-actions { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin:22px 0 34px; }
+    .quick { border:0; border-radius:17px; background:var(--paper); color:var(--ink); padding:16px; text-align:left; display:flex; align-items:center; gap:12px; box-shadow:0 8px 22px rgba(48,77,58,.04); transition:transform .18s ease, background .18s ease; }
+    .quick:hover { transform:translateY(-2px); background:#fdfdf6; }
+    .quick.primary { background:var(--green); color:white; }
+    .quick .round { width:35px; height:35px; border-radius:12px; display:grid; place-items:center; background:var(--soft); color:var(--deep); font-size:18px; }
+    .quick.primary .round { background:rgba(255,255,255,.18); color:white; }
+    .quick strong { display:block; font-size:15px; }
+    .quick small { display:block; margin-top:3px; color:var(--muted); }
+    .quick.primary small { color:rgba(255,255,255,.75); }
+    .content { display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(290px, .8fr); gap:28px; }
+    .section-title { display:flex; justify-content:space-between; align-items:end; gap:12px; margin-bottom:15px; }
+    .eyebrow { margin:0 0 5px; color:var(--muted); font-size:13px; }
+    h2 { margin:0; font-size:21px; letter-spacing:-.4px; }
+    .count { color:var(--deep); background:var(--soft); border-radius:99px; padding:6px 10px; font-size:12px; font-weight:700; }
+    .progress { height:8px; border-radius:999px; background:#e3e8df; overflow:hidden; margin-bottom:9px; }
+    .progress > span { display:block; height:100%; border-radius:inherit; width:33%; background:var(--green); transition:width .2s ease; }
+    .progress-row { display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:14px; }
+    .tasks { background:var(--paper); padding:5px 20px; border-radius:20px; box-shadow:var(--shadow); }
+    .task { display:flex; gap:13px; align-items:center; padding:16px 0; border-bottom:1px solid var(--line); }
+    .task:last-child { border-bottom:0; }
+    .task-icon { width:41px; height:41px; flex:none; display:grid; place-items:center; border-radius:14px; background:var(--peach); font-size:18px; }
+    .task:nth-child(2) .task-icon { background:#e9f0f7; }
+    .task:nth-child(3) .task-icon { background:#f2e9f2; }
+    .task-copy { flex:1; min-width:0; }
+    .task-copy h3 { margin:0 0 4px; font-size:15px; }
+    .task-copy p { margin:0; color:var(--muted); font-size:13px; }
+    .task.done .task-copy h3 { text-decoration:line-through; color:var(--muted); }
+    .check { width:35px; height:35px; border-radius:50%; border:1px solid var(--line); background:white; color:var(--muted); font-weight:700; }
+    .task.done .check { background:var(--green); border-color:var(--green); color:white; }
+    .health { background:var(--paper); border-radius:20px; padding:21px; box-shadow:var(--shadow); }
+    .health-head { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+    .health-head p { color:var(--muted); margin:5px 0 0; font-size:13px; }
+    .weight { font-size:20px; font-weight:750; color:var(--deep); }
+    .chart { width:100%; height:150px; margin:13px 0 4px; overflow:visible; }
+    .chart .grid { stroke:var(--line); stroke-width:1; }
+    .chart .path { fill:none; stroke:var(--green); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+    .chart .dot { fill:var(--paper); stroke:var(--green); stroke-width:3; }
+    .chart text { fill:var(--muted); font-size:10px; }
+    .reminders { margin-top:10px; }
+    .reminder { display:flex; gap:11px; padding:15px 0; border-top:1px solid var(--line); }
+    .reminder-icon { font-size:18px; }
+    .reminder h3 { margin:0 0 4px; font-size:14px; }
+    .reminder p { margin:0; color:var(--muted); font-size:12px; line-height:1.5; }
+    .page { display:none; }
+    .page.active { display:block; }
+    .page.active .content { display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(290px, .8fr); gap:28px; }
+    .page-title { margin:0 0 22px; font-size:25px; }
+    .calendar-card, .records-card, .profile-card { background:var(--paper); border-radius:20px; padding:22px; box-shadow:var(--shadow); }
+    .calendar-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .calendar-head h2 { font-size:20px; }
+    .weekdays, .calendar-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:7px; text-align:center; }
+    .weekdays { color:var(--muted); font-size:12px; margin-bottom:8px; }
+    .day { min-height:54px; border:0; background:transparent; border-radius:12px; color:var(--ink); font-size:14px; }
+    .day:hover { background:var(--soft); }
+    .day.today { background:var(--green); color:#fff; font-weight:700; }
+    .day.has-task::after { content:''; display:block; width:5px; height:5px; margin:4px auto 0; border-radius:50%; background:var(--green); }
+    .day.today::after { background:#fff; }
+    .calendar-detail { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+    .calendar-detail h3 { margin:0 0 11px; font-size:16px; }
+    .calendar-detail ul { margin:0; padding:0; list-style:none; display:grid; gap:10px; color:var(--muted); font-size:14px; }
+    .calendar-detail li { display:flex; gap:9px; align-items:center; }
+    .record-list { display:grid; gap:0; }
+    .record { display:grid; grid-template-columns:45px 1fr auto; gap:12px; align-items:center; padding:16px 0; border-bottom:1px solid var(--line); }
+    .record:last-child { border-bottom:0; }
+    .record-icon { width:40px; height:40px; border-radius:13px; background:var(--soft); display:grid; place-items:center; }
+    .record h3, .record p { margin:0; }
+    .record h3 { font-size:15px; }
+    .record p, .record time { color:var(--muted); font-size:13px; }
+    .profile-card { display:grid; gap:20px; }
+    .profile-top { display:flex; align-items:center; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+    .profile-top .avatar { width:66px; height:66px; font-size:36px; }
+    .profile-top h2, .profile-top p { margin:0; }
+    .profile-top p { color:var(--muted); font-size:14px; margin-top:5px; }
+    .profile-info { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; }
+    .profile-info div { background:var(--cream); border-radius:13px; padding:12px; }
+    .profile-info span { display:block; color:var(--muted); font-size:12px; margin-bottom:5px; }
+    .profile-info b { font-size:14px; }
+    .nav { display:none; }
+    .toast { position:fixed; inset:auto 24px 24px auto; background:var(--deep); color:white; padding:12px 16px; border-radius:12px; box-shadow:var(--shadow); transform:translateY(80px); opacity:0; transition:.22s ease; font-size:14px; }
+    .toast.show { transform:translateY(0); opacity:1; }
+    @media (max-width:760px) { .app { padding:22px 18px 92px; } h1 { font-size:26px; } .pet-hero { padding:19px; } .avatar { width:60px; height:60px; border-radius:20px; font-size:33px; } .pet-name { font-size:22px; } .pet-switch { font-size:0; padding:11px; } .pet-switch span { font-size:18px; } .quick-actions { gap:9px; margin:16px 0 27px; } .quick { padding:12px 9px; flex-direction:column; align-items:flex-start; gap:7px; } .quick strong { font-size:13px; } .quick small { display:none; } .content, .page.active .content { grid-template-columns:1fr; gap:26px; } .nav { position:fixed; z-index:5; bottom:0; left:0; right:0; height:67px; padding:8px 14px; display:flex; justify-content:space-around; background:rgba(255,254,249,.94); border-top:1px solid var(--line); backdrop-filter:blur(10px); } .nav button { border:0; background:transparent; color:var(--muted); display:grid; gap:3px; place-items:center; font-size:11px; } .nav button.active { color:var(--deep); font-weight:700; } }
+    @media (max-width:380px) { .pet-hero { gap:12px; } .pet-profile { gap:11px; } .pet-meta { font-size:12px; } .quick .round { width:31px; height:31px; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar"><div><p class="date">7月12日，星期日</p><h1>早上好，Jack</h1></div><button class="icon-btn" aria-label="通知">♧<i class="notice"></i></button></header>
+    <section class="pet-hero" aria-label="当前宠物"><div class="pet-profile"><div class="avatar" id="avatar">🐶</div><div><h2 class="pet-name" id="pet-name">豆包</h2><p class="pet-meta" id="pet-meta">柯基 · 2岁4个月</p><span class="pill" id="pet-status">● 状态良好</span></div></div><button class="pet-switch" id="switch-pet"><span>⇄</span><b>切换宠物</b></button></section>
+    <section class="quick-actions" aria-label="快捷记录"><button class="quick" data-toast="已记录早餐"><span class="round">🍽</span><span><strong>记录喂食</strong><small>早餐已完成</small></span></button><button class="quick" data-toast="已记录饮水"><span class="round">💧</span><span><strong>记录饮水</strong><small>保持水分充足</small></span></button><button class="quick primary" data-toast="已添加一条护理记录"><span class="round">＋</span><span><strong>添加护理</strong><small>洗护、用药或备注</small></span></button></section>
+    <section class="page active" data-page="home"><section class="content"><div><div class="section-title"><div><p class="eyebrow">今日安排</p><h2>养护清单</h2></div><span class="count" id="task-count">1 / 3 已完成</span></div><div class="progress"><span id="progress-fill"></span></div><div class="progress-row"><span>今日完成度</span><span id="progress-label">33%</span></div><div class="tasks" id="tasks"><article class="task done"><div class="task-icon">🍽</div><div class="task-copy"><h3>早餐</h3><p>08:00 · 鸡肉粮 120g</p></div><button class="check" aria-label="切换早餐完成状态">✓</button></article><article class="task"><div class="task-icon">🐾</div><div class="task-copy"><h3>傍晚散步</h3><p>18:30 · 预计 30 分钟</p></div><button class="check" aria-label="切换傍晚散步完成状态">○</button></article><article class="task"><div class="task-icon">💊</div><div class="task-copy"><h3>体外驱虫</h3><p>20:00 · 每月一次</p></div><button class="check" aria-label="切换体外驱虫完成状态">○</button></article></div></div><aside><div class="section-title"><div><p class="eyebrow">健康概况</p><h2>本周健康</h2></div></div><section class="health"><div class="health-head"><div><h2>体重趋势</h2><p>平稳下降，保持观察</p></div><span class="weight">12.4 kg</span></div><svg class="chart" viewBox="0 0 330 150" role="img" aria-label="最近四周体重由12.8千克降至12.4千克"><line class="grid" x1="15" y1="25" x2="320" y2="25"/><line class="grid" x1="15" y1="68" x2="320" y2="68"/><line class="grid" x1="15" y1="110" x2="320" y2="110"/><path class="path" d="M25 36 L120 53 L215 80 L305 72"/><circle class="dot" cx="25" cy="36" r="4"/><circle class="dot" cx="120" cy="53" r="4"/><circle class="dot" cx="215" cy="80" r="4"/><circle class="dot" cx="305" cy="72" r="4"/><text x="15" y="140">6/21</text><text x="110" y="140">6/28</text><text x="205" y="140">7/05</text><text x="292" y="140">今天</text></svg><div class="reminders"><div class="reminder"><span class="reminder-icon">💉</span><div><h3>疫苗提醒</h3><p>狂犬疫苗将在 8 月 3 日到期</p></div></div><div class="reminder"><span class="reminder-icon">🛁</span><div><h3>下次洗护</h3><p>建议 7 月 20 日安排</p></div></div></div></section></aside></section></section>
+    <section class="page" data-page="calendar"><h2 class="page-title">养护日历</h2><div class="calendar-card"><div class="calendar-head"><button class="icon-btn" aria-label="上个月">‹</button><h2>2026年 7月</h2><button class="icon-btn" aria-label="下个月">›</button></div><div class="weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="calendar-grid">${Array.from({length:31}, (_,i)=>`<button class="day ${i===11?'today':(i===2||i===5||i===19?'has-task':'')}">${i+1}</button>`).join('')}</div><div class="calendar-detail"><h3>7月12日 · 今日安排</h3><ul><li>● 08:00 早餐 · 已完成</li><li>● 18:30 傍晚散步</li><li>● 20:00 体外驱虫</li></ul></div></div></section>
+    <section class="page" data-page="records"><h2 class="page-title">养护记录</h2><div class="records-card"><div class="record-list"><article class="record"><div class="record-icon">🍽</div><div><h3>早餐</h3><p>鸡肉粮 120g · 食欲正常</p></div><time>今天 08:00</time></article><article class="record"><div class="record-icon">⚖️</div><div><h3>体重记录</h3><p>12.4 kg · 较上周 -0.1 kg</p></div><time>7月12日</time></article><article class="record"><div class="record-icon">🛁</div><div><h3>洗护</h3><p>洗澡、修剪脚底毛</p></div><time>7月05日</time></article><article class="record"><div class="record-icon">💉</div><div><h3>驱虫记录</h3><p>体内驱虫药 · 已服用</p></div><time>6月20日</time></article></div></div></section>
+    <section class="page" data-page="profile"><h2 class="page-title">宠物档案</h2><div class="profile-card"><div class="profile-top"><div class="avatar" id="profile-avatar">🐶</div><div><h2 id="profile-name">豆包</h2><p>我的家庭成员 · 已陪伴 2 年</p></div></div><div class="profile-info"><div><span>品种</span><b id="profile-breed">柯基犬</b></div><div><span>性别</span><b>男孩 · 已绝育</b></div><div><span>生日</span><b>2024年3月8日</b></div><div><span>当前体重</span><b>12.4 kg</b></div><div><span>芯片编号</span><b>已登记</b></div><div><span>过敏情况</span><b>暂无已知过敏</b></div></div><div class="reminders"><div class="reminder"><span class="reminder-icon">🏥</span><div><h3>常用医院</h3><p>安心宠物医院 · 400-800-1234</p></div></div><div class="reminder"><span class="reminder-icon">📝</span><div><h3>日常备注</h3><p>偏爱鸡肉口味，雨天不喜欢外出。</p></div></div></div></div></section>
+  </main>
+  <nav class="nav" aria-label="主导航"><button class="active" data-page-target="home">⌂<span>首页</span></button><button data-page-target="calendar">▣<span>日历</span></button><button data-page-target="records">☷<span>记录</span></button><button data-page-target="profile">♙<span>档案</span></button></nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    const pets = [{ name: '豆包', meta: '柯基 · 2岁4个月', status: '● 状态良好', avatar: '🐶' }, { name: '奶糖', meta: '英短 · 1岁8个月', status: '● 活力充足', avatar: '🐱' }];
+    let currentPet = 0;
+    const toast = document.querySelector('#toast');
+    let toastTimer;
+    const showToast = (text) => { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 2200); };
+    document.querySelector('#switch-pet').addEventListener('click', () => { currentPet = (currentPet + 1) % pets.length; const pet = pets[currentPet]; document.querySelector('#pet-name').textContent = pet.name; document.querySelector('#pet-meta').textContent = pet.meta; document.querySelector('#pet-status').textContent = pet.status; document.querySelector('#avatar').textContent = pet.avatar; document.querySelector('#profile-name').textContent = pet.name; document.querySelector('#profile-avatar').textContent = pet.avatar; document.querySelector('#profile-breed').textContent = currentPet === 0 ? '柯基犬' : '英国短毛猫'; showToast(`已切换至${pet.name}`); });
+    document.querySelectorAll('[data-toast]').forEach((button) => button.addEventListener('click', () => showToast(button.dataset.toast)));
+    const updateProgress = () => { const tasks = [...document.querySelectorAll('.task')]; const complete = tasks.filter((task) => task.classList.contains('done')).length; const percent = Math.round((complete / tasks.length) * 100); document.querySelector('#task-count').textContent = `${complete} / ${tasks.length} 已完成`; document.querySelector('#progress-fill').style.width = `${percent}%`; document.querySelector('#progress-label').textContent = `${percent}%`; };
+    document.querySelectorAll('.task .check').forEach((button) => button.addEventListener('click', () => { const task = button.closest('.task'); const done = task.classList.toggle('done'); button.textContent = done ? '✓' : '○'; showToast(done ? `${task.querySelector('h3').textContent}已完成` : `已恢复${task.querySelector('h3').textContent}`); updateProgress(); }));
+    const calendarGrid = document.querySelector('.calendar-grid');
+    calendarGrid.textContent = '';
+    for (let day = 1; day <= 31; day += 1) { const button = document.createElement('button'); button.className = `day${day === 12 ? ' today' : [3, 6, 20].includes(day) ? ' has-task' : ''}`; button.textContent = day; button.addEventListener('click', () => showToast(`已查看 7月${day}日的养护安排`)); calendarGrid.append(button); }
+    document.querySelectorAll('[data-page-target]').forEach((button) => button.addEventListener('click', () => { const page = button.dataset.pageTarget; document.querySelectorAll('.page').forEach((view) => view.classList.toggle('active', view.dataset.page === page)); document.querySelectorAll('[data-page-target]').forEach((item) => item.classList.toggle('active', item === button)); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
+  </script>
+</body>
+</html>
