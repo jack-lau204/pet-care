@@ -7,17 +7,13 @@ export const SERVICE_LABELS = Object.freeze({
   deep_care: '深度护理',
   wash_and_style: '洗护造型'
 });
-export const PETS = Object.freeze({
-  doubao: { name: '豆包', species: 'dog' },
-  naitang: { name: '奶糖', species: 'cat' }
-});
 export const SLOT_TIMES = Object.freeze(
   Array.from({ length: 9 }, (_, index) => `${String(index + 9).padStart(2, '0')}:00`)
 );
 
 const phonePattern = /^[+\d][\d\s-]{6,19}$/;
 const appointmentSchema = z.object({
-  petCode: z.enum(['doubao', 'naitang']),
+  petId: z.string().uuid('宠物标识无效'),
   serviceCode: z.enum(['basic_wash', 'deep_care', 'wash_and_style']),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.enum(SLOT_TIMES),
@@ -68,11 +64,8 @@ export function validateUpdatePayload(payload, now = localNow()) {
 }
 
 function enrichAppointment(data, scheduledStart) {
-  const pet = PETS[data.petCode];
   return {
     ...data,
-    petName: pet.name,
-    petSpecies: pet.species,
     scheduledStart: scheduledStart.toUTC().toISO()
   };
 }
@@ -89,4 +82,3 @@ function ruleError(message) {
   error.status = 400;
   return error;
 }
-

@@ -7,19 +7,22 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --test"
+    "check": "node --check src/server.js && node --check src/app.js && node --check public/app.js && node --test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.52.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "helmet": "^8.1.0",
     "luxon": "^3.7.2",
+    "multer": "^2.0.2",
     "pg": "^8.16.3",
+    "sharp": "^0.34.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
