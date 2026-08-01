@@ -10,6 +10,7 @@ const OTHER_ID = 'c2d1268a-b574-4aa0-8e77-b3f5687c21d2';
 const PET_ID = '2e6fd5ae-86cb-4f8d-8fd1-03a5a6b2534e';
 const POST_ID = 'e19e1223-34c1-4ae4-a2ec-a82d3bf8fa64';
 const COMMENT_ID = 'c12b753d-ccce-4836-8e2d-951ed16b65b5';
+const PET_REQUEST_ID = '13cc7c18-91f4-4da4-8917-06481628f218';
 const fixedNow = () => DateTime.fromISO('2026-07-13T08:00:00', { zone: BUSINESS_ZONE });
 
 function actor(overrides = {}) {
@@ -43,7 +44,11 @@ function fakeAppointmentRepository(overrides = {}) {
   return {
     health: async () => ({ now: '2026-07-13T00:00:00.000Z' }), bookedStarts: async () => [], list: async () => [],
     create: async () => ({ appointment: appointment(), reused: false }), update: async () => appointment(),
-    cancel: async () => appointment({ status: 'cancelled', cancelledAt: '2026-07-13T01:00:00.000Z' }), ...overrides
+    cancel: async () => appointment({ status: 'cancelled', cancelledAt: '2026-07-13T01:00:00.000Z' }),
+    listAll: async () => [appointment({ ownerName: 'Jack', ownerEmail: 'jack@example.com' })],
+    getById: async () => appointment(), updateAsAdmin: async () => appointment(),
+    cancelAsAdmin: async () => appointment({ status: 'cancelled', cancelledAt: '2026-07-13T01:00:00.000Z' }),
+    ...overrides
   };
 }
 
@@ -64,6 +69,9 @@ function fakeIdentityRepository(overrides = {}) {
     getProfile: async (id) => id === USER_ID ? actor() : null,
     getPet: async (id) => id === PET_ID ? pet() : null,
     listPets: async () => [pet()], createPet: async () => pet(), updatePet: async () => pet(), deletePet: async () => true,
+    listUsers: async () => [{ ...actor(), email: 'jack@example.com' }],
+    updateUserRole: async (_actorId, id, role) => ({ ...actor({ id, role }), email: 'other@example.com' }),
+    updatePetAsAdmin: async () => pet(), deletePetAsAdmin: async () => true,
     ...overrides
   };
 }
@@ -114,6 +122,7 @@ test('serves health, availability, and the complete application page', async () 
     assert.match(text, /养护动态/);
     assert.match(text, /洗护预约/);
     assert.match(text, /登录 \/ 注册/);
+    assert.match(text, /管理后台/);
   });
   await request(app).get('/styles.css').expect(200).expect('Content-Type', /css/).expect(({ text }) => {
     assert.match(text, /\.toast\{pointer-events:none\}/);
@@ -186,6 +195,99 @@ test('enforces author and employee moderation boundaries', async () => {
 
   const staff = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'staff' }) }));
   await staff.post(`/api/posts/${POST_ID}/moderation`).send({ status: 'hidden', reason: '违规内容' }).expect(200);
+
+  const admin = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'admin' }) }));
+  await admin.post(`/api/posts/${POST_ID}/moderation`).send({ status: 'hidden', reason: '管理员审核' }).expect(200);
+});
+
+test('protects admin APIs from anonymous, customer, and staff accounts', async () => {
+  await request(buildApp()).get('/api/admin/users').expect(401);
+
+  const customer = await loginAgent(buildApp());
+  await customer.get('/api/admin/users').expect(403);
+
+  const staff = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'staff' }) }));
+  await staff.get('/api/admin/users').expect(403);
+  await staff.get('/api/admin/appointments').expect(403);
+  await staff.get('/api/admin/pets').expect(403);
+});
+
+test('allows admins to search users and change roles but not demote themselves', async () => {
+  let search;
+  let changed;
+  const identityRepository = fakeIdentityRepository({
+    listUsers: async (query) => {
+      search = query;
+      return [{ ...actor({ id: OTHER_ID, role: 'staff' }), email: 'staff@example.com' }];
+    },
+    updateUserRole: async (actorId, id, role) => {
+      changed = { actorId, id, role };
+      return { ...actor({ id, role }), email: 'staff@example.com' };
+    }
+  });
+  const admin = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'admin' }), identityRepository }));
+
+  await admin.get('/api/admin/users?query=staff').expect(200).expect(({ body }) => {
+    assert.equal(body.users[0].role, 'staff');
+  });
+  assert.equal(search, 'staff');
+
+  await admin.patch(`/api/admin/users/${OTHER_ID}/role`).send({ role: 'admin' }).expect(200);
+  assert.deepEqual(changed, { actorId: USER_ID, id: OTHER_ID, role: 'admin' });
+  await admin.patch(`/api/admin/users/${USER_ID}/role`).send({ role: 'staff' }).expect(409);
+  await admin.patch(`/api/admin/users/${OTHER_ID}/role`).send({ role: 'owner' }).expect(400);
+});
+
+test('allows admins to create, edit, and delete pets for any valid owner', async () => {
+  const calls = [];
+  const identityRepository = fakeIdentityRepository({
+    getProfile: async (id) => id === OTHER_ID ? actor({ id: OTHER_ID }) : null,
+    createPet: async (ownerId, input, requestId) => { calls.push(['create', ownerId, input, requestId]); return pet({ ownerId }); },
+    updatePetAsAdmin: async (id, input) => { calls.push(['update', id, input]); return pet(input); },
+    deletePetAsAdmin: async (id) => { calls.push(['delete', id]); return true; }
+  });
+  const admin = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'admin' }), identityRepository }));
+  const payload = { ownerId: OTHER_ID, requestId: PET_REQUEST_ID, name: '奶糖', species: 'cat', breed: '英短', sex: 'female', birthDate: null, weightKg: 4.2 };
+
+  await admin.post('/api/admin/pets').send(payload).expect(201);
+  await admin.patch(`/api/admin/pets/${PET_ID}`).send({ ...payload, ownerId: undefined }).expect(200);
+  await admin.delete(`/api/admin/pets/${PET_ID}`).expect(204);
+  assert.equal(calls[0][1], OTHER_ID);
+  assert.equal(calls[0][3], PET_REQUEST_ID);
+  assert.equal(calls[1][1], PET_ID);
+  assert.deepEqual(calls[2], ['delete', PET_ID]);
+
+  await admin.post('/api/admin/pets').send({ ...payload, ownerId: '13cc7c18-91f4-4da4-8917-06481628f218' }).expect(404);
+});
+
+test('allows admins to list, update, and cancel all future appointments with owner matching', async () => {
+  let updated;
+  let cancelled;
+  const repository = fakeAppointmentRepository({
+    updateAsAdmin: async (id, input, selectedPet) => { updated = { id, input, selectedPet }; return appointment(); },
+    cancelAsAdmin: async (id) => { cancelled = id; return appointment({ status: 'cancelled' }); }
+  });
+  const admin = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'admin' }), repository }));
+  const payload = { ...validPayload };
+  delete payload.requestId;
+
+  await admin.get('/api/admin/appointments').expect(200).expect(({ body }) => assert.equal(body.appointments.length, 1));
+  await admin.patch(`/api/admin/appointments/${appointment().id}`).send(payload).expect(200);
+  assert.equal(updated.id, appointment().id);
+  assert.equal(updated.selectedPet.ownerId, USER_ID);
+  await admin.post(`/api/admin/appointments/${appointment().id}/cancel`).send({}).expect(200);
+  assert.equal(cancelled, appointment().id);
+
+  const wrongPetRepository = fakeIdentityRepository({ getPet: async () => pet({ ownerId: OTHER_ID }) });
+  const denied = await loginAgent(buildApp({ authService: fakeAuthService({ role: 'admin' }), identityRepository: wrongPetRepository }));
+  await denied.patch(`/api/admin/appointments/${appointment().id}`).send(payload).expect(403);
+
+  const unavailable = await loginAgent(buildApp({
+    authService: fakeAuthService({ role: 'admin' }),
+    repository: fakeAppointmentRepository({ updateAsAdmin: async () => null, cancelAsAdmin: async () => null })
+  }));
+  await unavailable.patch(`/api/admin/appointments/${appointment().id}`).send(payload).expect(404);
+  await unavailable.post(`/api/admin/appointments/${appointment().id}/cancel`).send({}).expect(404);
 });
 
 test('validates post content, comments, cursor, and image count limits', async () => {

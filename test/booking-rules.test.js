@@ -5,6 +5,7 @@ import {
   BUSINESS_ZONE,
   parseBookableDate,
   parseScheduledStart,
+  validateAdminUpdatePayload,
   validateCreatePayload
 } from '../src/booking-rules.js';
 
@@ -43,4 +44,17 @@ test('rejects invalid services, slots, and contact details', () => {
   assert.throws(() => validateCreatePayload({ ...base, serviceCode: 'spa' }, now));
   assert.throws(() => validateCreatePayload({ ...base, time: '10:30' }, now));
   assert.throws(() => validateCreatePayload({ ...base, customerPhone: '12' }, now));
+});
+
+test('allows admins to reschedule to any future business slot without customer notice time', () => {
+  const adminNow = DateTime.fromISO('2026-07-13T08:30:00', { zone: BUSINESS_ZONE });
+  const result = validateAdminUpdatePayload({
+    petId, serviceCode: 'basic_wash', date: '2026-07-13', time: '09:00',
+    customerName: 'Jack', customerPhone: '13800000000', notes: ''
+  }, adminNow);
+  assert.equal(result.scheduledStart, '2026-07-13T01:00:00.000Z');
+  assert.throws(() => validateAdminUpdatePayload({
+    petId, serviceCode: 'basic_wash', date: '2026-07-13', time: '08:00',
+    customerName: 'Jack', customerPhone: '13800000000', notes: ''
+  }, adminNow));
 });

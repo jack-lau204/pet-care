@@ -16,6 +16,7 @@
         <button data-page-target="feed">养护动态</button>
         <button data-page-target="booking">洗护预约</button>
         <button data-page-target="profile">宠物档案</button>
+        <button data-page-target="admin" data-admin-only hidden>管理后台</button>
       </nav>
       <button class="account-button" id="account-button">登录 / 注册</button>
     </header>
@@ -100,16 +101,60 @@
         </form>
         <div class="pet-list" id="pet-list"><div class="panel empty">登录后管理宠物档案。</div></div>
       </section>
+
+      <section class="page" data-page="admin">
+        <div class="page-heading"><div><p class="eyebrow">ADMIN CONSOLE</p><h1>管理后台</h1><p>管理用户角色、全部洗护预约和宠物档案。</p></div></div>
+        <div class="admin-tabs" role="tablist">
+          <button class="active" type="button" data-admin-tab="users">用户</button>
+          <button type="button" data-admin-tab="appointments">预约</button>
+          <button type="button" data-admin-tab="pets">宠物</button>
+        </div>
+
+        <section class="admin-section" data-admin-section="users">
+          <div class="section-head"><div><p class="eyebrow">USERS</p><h2>用户与角色</h2></div><input class="admin-search" id="admin-user-search" type="search" maxlength="80" placeholder="搜索昵称或邮箱"></div>
+          <div class="admin-list" id="admin-user-list"><div class="panel empty">正在加载用户…</div></div>
+        </section>
+
+        <section class="admin-section" data-admin-section="appointments" hidden>
+          <div class="section-head"><div><p class="eyebrow">ALL BOOKINGS</p><h2>全部预约</h2></div><button class="secondary-button" type="button" id="refresh-admin-appointments">刷新</button></div>
+          <div class="admin-list" id="admin-appointment-list"><div class="panel empty">正在加载预约…</div></div>
+        </section>
+
+        <section class="admin-section" data-admin-section="pets" hidden>
+          <div class="section-head"><div><p class="eyebrow">ALL PETS</p><h2>全部宠物</h2></div><div class="admin-section-actions"><input class="admin-search" id="admin-pet-search" type="search" maxlength="80" placeholder="搜索宠物、品种或主人"><button class="primary-button" type="button" id="add-admin-pet">＋ 新建宠物</button></div></div>
+          <form class="panel pet-form" id="admin-pet-form" hidden>
+            <div class="composer-head"><h2 id="admin-pet-form-title">新建宠物</h2><button type="button" class="icon-button" id="close-admin-pet-form">×</button></div>
+            <label class="admin-owner-field">主人<select name="ownerId" id="admin-pet-owner" required></select></label>
+            <div class="form-row"><label>名字<input name="name" maxlength="50" required></label><label>种类<select name="species"><option value="dog">狗狗</option><option value="cat">猫咪</option><option value="other">其他</option></select></label></div>
+            <div class="form-row"><label>品种<input name="breed" maxlength="80"></label><label>性别<select name="sex"><option value="unknown">未知</option><option value="male">男孩</option><option value="female">女孩</option></select></label></div>
+            <div class="form-row"><label>生日<input name="birthDate" type="date"></label><label>体重（kg）<input name="weightKg" type="number" min="0.01" max="9999" step="0.01"></label></div>
+            <div class="form-footer"><p class="form-error" id="admin-pet-error"></p><button class="primary-button" type="submit">保存档案</button></div>
+          </form>
+          <div class="admin-list" id="admin-pet-list"><div class="panel empty">正在加载宠物…</div></div>
+        </section>
+      </section>
     </main>
   </div>
 
-  <nav class="mobile-nav" aria-label="移动端主导航"><button class="active" data-page-target="home">⌂<span>首页</span></button><button data-page-target="feed">◫<span>动态</span></button><button data-page-target="booking">＋<span>预约</span></button><button data-page-target="profile">♙<span>档案</span></button></nav>
+  <nav class="mobile-nav" aria-label="移动端主导航"><button class="active" data-page-target="home">⌂<span>首页</span></button><button data-page-target="feed">◫<span>动态</span></button><button data-page-target="booking">＋<span>预约</span></button><button data-page-target="profile">♙<span>档案</span></button><button data-page-target="admin" data-admin-only hidden>⚙<span>管理</span></button></nav>
 
   <dialog id="auth-dialog" class="dialog">
     <div class="dialog-head"><div><h2>欢迎来到宠物养护</h2><p>注册后即可发布、评论和预约洗护。</p></div><button class="icon-button" id="close-auth">×</button></div>
     <div class="auth-tabs"><button class="active" data-auth-tab="login">登录</button><button data-auth-tab="register">注册</button></div>
     <form id="login-form" class="dialog-form"><label>邮箱<input name="email" type="email" autocomplete="email" required></label><label>密码<input name="password" type="password" autocomplete="current-password" minlength="8" required></label><p class="form-error" data-auth-error></p><button class="primary-button" type="submit">登录</button></form>
     <form id="register-form" class="dialog-form" hidden><label>昵称<input name="displayName" maxlength="50" autocomplete="nickname" required></label><label>邮箱<input name="email" type="email" autocomplete="email" required></label><label>密码<input name="password" type="password" autocomplete="new-password" minlength="8" required></label><p class="form-error" data-auth-error></p><button class="primary-button" type="submit">创建账号</button></form>
+  </dialog>
+
+  <dialog id="admin-appointment-dialog" class="dialog admin-dialog">
+    <div class="dialog-head"><div><h2>修改预约</h2><p id="admin-appointment-owner"></p></div><button class="icon-button" type="button" id="close-admin-appointment">×</button></div>
+    <form id="admin-appointment-form" class="dialog-form">
+      <label>宠物<select name="petId" id="admin-appointment-pet" required></select></label>
+      <div class="form-row"><label>到店日期<input name="date" type="date" required></label><label>到店时间<select name="time" required><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="11:00">11:00</option><option value="12:00">12:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option><option value="15:00">15:00</option><option value="16:00">16:00</option><option value="17:00">17:00</option></select></label></div>
+      <label>洗护服务<select name="serviceCode"><option value="basic_wash">基础洗护</option><option value="deep_care">深度护理</option><option value="wash_and_style">洗护造型</option></select></label>
+      <div class="form-row"><label>联系人<input name="customerName" maxlength="50" required></label><label>联系电话<input name="customerPhone" maxlength="20" inputmode="tel" required></label></div>
+      <label>护理备注<textarea name="notes" maxlength="500"></textarea></label>
+      <div class="form-footer"><p class="form-error" id="admin-appointment-error"></p><button class="primary-button" type="submit">保存修改</button></div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

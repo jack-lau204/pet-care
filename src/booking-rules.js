@@ -63,6 +63,16 @@ export function validateUpdatePayload(payload, now = localNow()) {
   return enrichAppointment(parsed.data, scheduledStart);
 }
 
+export function validateAdminUpdatePayload(payload, now = localNow()) {
+  const parsed = updateAppointmentSchema.safeParse(payload);
+  if (!parsed.success) throw validationError(parsed.error.issues);
+  parseBookableDate(parsed.data.date, now);
+  const scheduledStart = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`, { zone: BUSINESS_ZONE });
+  if (!scheduledStart.isValid || !SLOT_TIMES.includes(parsed.data.time)) throw ruleError('预约时段无效');
+  if (scheduledStart <= now) throw ruleError('不能安排过去的时段');
+  return enrichAppointment(parsed.data, scheduledStart);
+}
+
 function enrichAppointment(data, scheduledStart) {
   return {
     ...data,

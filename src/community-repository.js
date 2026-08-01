@@ -1,4 +1,5 @@
 import { requirePool } from './db.js';
+import { hasStaffAccess } from './roles.js';
 
 const postColumns = `
   p.id, p.author_id, p.pet_id, p.phase, p.body, p.status, p.moderation_reason,
@@ -14,7 +15,7 @@ export function createCommunityRepository(pool) {
       const db = requirePool(pool);
       const values = [];
       const conditions = [];
-      if (actor?.role !== 'staff') {
+      if (!hasStaffAccess(actor?.role)) {
         if (actor) {
           values.push(actor.id);
           conditions.push(`(p.status = 'published' or p.author_id = $${values.length})`);
@@ -145,7 +146,7 @@ export function createCommunityRepository(pool) {
       const db = requirePool(pool);
       const values = [postId];
       const conditions = ['c.post_id = $1'];
-      if (actor?.role !== 'staff') {
+      if (!hasStaffAccess(actor?.role)) {
         if (actor) {
           values.push(actor.id);
           conditions.push(`(c.status='published' or c.author_id=$${values.length})`);
