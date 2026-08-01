@@ -10,7 +10,14 @@ const state = {
   originalPostImages: [],
   existingPostImages: [],
   pendingFiles: [],
-  editingAppointmentId: null
+  editingAppointmentId: null,
+  adminUsers: [],
+  adminPets: [],
+  adminAppointments: [],
+  editingAdminPetId: null,
+  editingAdminAppointmentId: null,
+  petCreateRequestId: null,
+  adminPetCreateRequestId: null
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -40,12 +47,17 @@ function showToast(message) {
 }
 
 function showPage(name) {
+  if (name === 'admin' && !isAdmin()) {
+    showToast('仅管理员可以访问管理后台');
+    name = 'home';
+  }
   $$('.page').forEach((page) => page.classList.toggle('active', page.dataset.page === name));
   $$('[data-page-target]').forEach((button) => button.classList.toggle('active', button.dataset.pageTarget === name));
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (name === 'feed' && !state.posts.length) loadPosts(true);
   if (name === 'booking') prepareBooking();
   if (name === 'profile') renderPets();
+  if (name === 'admin') loadAdminPage();
 }
 
 $$('[data-page-target]').forEach((button) => button.addEventListener('click', () => showPage(button.dataset.pageTarget)));
@@ -74,16 +86,22 @@ function syncAccount() {
     button.textContent = '登录 / 注册';
     button.onclick = () => $('#auth-dialog').showModal();
     $('#pet-search').hidden = true;
+    $$('[data-admin-only]').forEach((node) => { node.hidden = true; });
     return;
   }
-  button.textContent = `${state.user.displayName}${state.user.role === 'staff' ? ' · 员工' : ''}`;
-  $('#pet-search').hidden = state.user.role !== 'staff';
+  button.textContent = `${state.user.displayName}${roleSuffix(state.user.role)}`;
+  $('#pet-search').hidden = !hasStaffAccess(state.user.role);
+  $$('[data-admin-only]').forEach((node) => { node.hidden = !isAdmin(); });
   button.onclick = async () => {
     if (!confirm('确定退出当前账号吗？')) return;
     await api('/api/auth/logout', { method: 'POST', body: '{}' });
     state.user = null;
     state.pets = [];
     state.appointments = [];
+    state.adminUsers = [];
+    state.adminPets = [];
+    state.adminAppointments = [];
+    if ($('[data-page="admin"]').classList.contains('active')) showPage('home');
     syncAccount();
     syncPetUi();
     renderPets();
@@ -184,13 +202,13 @@ function syncPetUi() {
   } else {
     heroAvatar.textContent = speciesIcon(pet.species);
     heroTitle.textContent = `${pet.name}，今天状态怎么样？`;
-    heroMeta.textContent = [pet.breed || speciesLabel(pet.species), pet.weightKg ? `${pet.weightKg} kg` : '', pet.ownerName && state.user.role === 'staff' ? `主人：${pet.ownerName}` : ''].filter(Boolean).join(' · ');
+    heroMeta.textContent = [pet.breed || speciesLabel(pet.species), pet.weightKg ? `${pet.weightKg} kg` : '', pet.ownerName && hasStaffAccess(state.user.role) ? `主人：${pet.ownerName}` : ''].filter(Boolean).join(' · ');
     petSwitch.hidden = state.pets.length < 2;
     petSwitch.replaceChildren(...state.pets.map((item) => option(item.id, `${speciesIcon(item.species)} ${item.name}`)));
     petSwitch.value = pet.id;
   }
   for (const select of [$('#post-pet'), $('#booking-pet')]) {
-    select.replaceChildren(...state.pets.map((item) => option(item.id, `${speciesIcon(item.species)} ${item.name}${state.user?.role === 'staff' && item.ownerName ? ` · ${item.ownerName}` : ''}`)));
+    select.replaceChildren(...state.pets.map((item) => option(item.id, `${speciesIcon(item.species)} ${item.name}${hasStaffAccess(state.user?.role) && item.ownerName ? ` · ${item.ownerName}` : ''}`)));
     if (state.selectedPetId) select.value = state.selectedPetId;
   }
 }
@@ -203,6 +221,7 @@ $('#pet-switch').onchange = (event) => {
 $('#add-pet').onclick = () => {
   if (!requireLogin()) return;
   state.editingPetId = null;
+  state.petCreateRequestId = crypto.randomUUID();
   $('#pet-form').reset();
   $('#pet-form-title').textContent = '添加宠物';
   $('#pet-error').textContent = '';
@@ -212,6 +231,7 @@ $('#add-pet').onclick = () => {
 $('#close-pet-form').onclick = closePetForm;
 function closePetForm() {
   state.editingPetId = null;
+  state.petCreateRequestId = null;
   $('#pet-form').hidden = true;
   $('#pet-error').textContent = '';
 }
@@ -219,8 +239,13 @@ function closePetForm() {
 $('#pet-form').onsubmit = async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.submitting === 'true') return;
+  form.dataset.submitting = 'true';
+  const submit = $('button[type="submit"]', form);
+  submit.disabled = true;
   const values = Object.fromEntries(new FormData(form));
   const payload = { ...values, birthDate: values.birthDate || null, weightKg: values.weightKg ? Number(values.weightKg) : null };
+  if (!state.editingPetId) payload.requestId = state.petCreateRequestId || (state.petCreateRequestId = crypto.randomUUID());
   $('#pet-error').textContent = '';
   try {
     const url = state.editingPetId ? `/api/pets/${state.editingPetId}` : '/api/pets';
@@ -230,6 +255,9 @@ $('#pet-form').onsubmit = async (event) => {
     await loadPets();
   } catch (error) {
     $('#pet-error').textContent = error.message;
+  } finally {
+    form.dataset.submitting = 'false';
+    submit.disabled = false;
   }
 };
 
@@ -247,7 +275,7 @@ function renderPets() {
     const card = document.createElement('article');
     card.className = 'pet-card';
     const own = pet.ownerId === state.user.id;
-    card.innerHTML = `<div class="pet-card-avatar">${speciesIcon(pet.species)}</div><h3>${escapeHtml(pet.name)}</h3><p>${escapeHtml(pet.breed || speciesLabel(pet.species))}${pet.weightKg ? ` · ${pet.weightKg} kg` : ''}</p>${pet.ownerName && state.user.role === 'staff' ? `<p>主人：${escapeHtml(pet.ownerName)}</p>` : ''}<div class="card-actions" ${own ? '' : 'hidden'}><button data-edit-pet>编辑</button><button class="danger" data-delete-pet>删除</button></div>`;
+    card.innerHTML = `<div class="pet-card-avatar">${speciesIcon(pet.species)}</div><h3>${escapeHtml(pet.name)}</h3><p>${escapeHtml(pet.breed || speciesLabel(pet.species))}${pet.weightKg ? ` · ${pet.weightKg} kg` : ''}</p>${pet.ownerName && hasStaffAccess(state.user.role) ? `<p>主人：${escapeHtml(pet.ownerName)}</p>` : ''}<div class="card-actions" ${own ? '' : 'hidden'}><button data-edit-pet>编辑</button><button class="danger" data-delete-pet>删除</button></div>`;
     $('[data-edit-pet]', card)?.addEventListener('click', () => beginPetEdit(pet));
     $('[data-delete-pet]', card)?.addEventListener('click', () => deletePet(pet));
     return card;
@@ -256,6 +284,7 @@ function renderPets() {
 
 function beginPetEdit(pet) {
   state.editingPetId = pet.id;
+  state.petCreateRequestId = null;
   const form = $('#pet-form');
   form.hidden = false;
   $('#pet-form-title').textContent = `编辑 ${pet.name}`;
@@ -426,7 +455,7 @@ function renderPost(post) {
   card.className = 'panel post-card';
   const copy = document.createElement('div');
   copy.className = 'post-copy';
-  copy.innerHTML = `<div class="post-head"><div class="author"><span class="author-avatar">${speciesIcon(post.pet.species)}</span><div><b>${escapeHtml(post.author.displayName)} ${post.author.role === 'staff' ? '<span class="role-tag">员工</span>' : ''}</b><small>${escapeHtml(post.pet.name)} · ${escapeHtml(post.pet.breed || speciesLabel(post.pet.species))}</small></div></div><div><span class="phase-tag ${post.phase}">${post.phase === 'before' ? '养护前' : '养护后'}</span><div class="post-menu"></div></div></div><p class="post-time">${formatDateTime(post.createdAt)}${post.updatedAt !== post.createdAt ? ' · 已编辑' : ''}</p>`;
+  copy.innerHTML = `<div class="post-head"><div class="author"><span class="author-avatar">${speciesIcon(post.pet.species)}</span><div><b>${escapeHtml(post.author.displayName)} ${roleTag(post.author.role)}</b><small>${escapeHtml(post.pet.name)} · ${escapeHtml(post.pet.breed || speciesLabel(post.pet.species))}</small></div></div><div><span class="phase-tag ${post.phase}">${post.phase === 'before' ? '养护前' : '养护后'}</span><div class="post-menu"></div></div></div><p class="post-time">${formatDateTime(post.createdAt)}${post.updatedAt !== post.createdAt ? ' · 已编辑' : ''}</p>`;
   if (post.body) {
     const body = document.createElement('p');
     body.className = 'post-body';
@@ -538,7 +567,7 @@ function renderComments(post, comments, container, toggle) {
   comments.forEach((comment) => {
     const node = document.createElement('article');
     node.className = 'comment';
-    node.innerHTML = `<div class="comment-head"><b>${escapeHtml(comment.author.displayName)}${comment.author.role === 'staff' ? ' · 员工' : ''}</b><div></div></div><p></p>`;
+    node.innerHTML = `<div class="comment-head"><b>${escapeHtml(comment.author.displayName)}${roleSuffix(comment.author.role)}</b><div></div></div><p></p>`;
     $('p', node).textContent = comment.status === 'hidden' ? `该评论已隐藏${comment.moderationReason ? `：${comment.moderationReason}` : ''}` : comment.body;
     const actions = $('.comment-head div', node);
     if (comment.canEdit) actions.append(actionButton('编辑', async () => {
@@ -764,6 +793,269 @@ async function cancelAppointment(appointment) {
   } catch (error) { showToast(error.message); }
 }
 
+$$('[data-admin-tab]').forEach((button) => {
+  button.onclick = () => {
+    $$('[data-admin-tab]').forEach((item) => item.classList.toggle('active', item === button));
+    $$('[data-admin-section]').forEach((section) => { section.hidden = section.dataset.adminSection !== button.dataset.adminTab; });
+  };
+});
+
+async function loadAdminPage() {
+  if (!isAdmin()) return;
+  await Promise.all([loadAdminUsers(), loadAdminPets(), loadAdminAppointments()]);
+}
+
+let adminUserSearchTimer;
+$('#admin-user-search').oninput = (event) => {
+  clearTimeout(adminUserSearchTimer);
+  adminUserSearchTimer = setTimeout(() => loadAdminUsers(event.target.value.trim()), 250);
+};
+
+async function loadAdminUsers(query = '') {
+  if (!isAdmin()) return;
+  try {
+    state.adminUsers = (await api(`/api/admin/users${query ? `?query=${encodeURIComponent(query)}` : ''}`)).users;
+    renderAdminUsers();
+    syncAdminOwnerOptions();
+  } catch (error) {
+    $('#admin-user-list').innerHTML = `<div class="panel empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderAdminUsers() {
+  const list = $('#admin-user-list');
+  if (!state.adminUsers.length) {
+    list.innerHTML = '<div class="panel empty">没有匹配的用户。</div>';
+    return;
+  }
+  list.replaceChildren(...state.adminUsers.map((user) => {
+    const row = document.createElement('article');
+    row.className = 'admin-row';
+    row.innerHTML = `<div class="admin-row-main"><h3>${escapeHtml(user.displayName)} ${roleTag(user.role)}</h3><p>${escapeHtml(user.email)} · 注册于 ${formatDate(user.createdAt)}</p></div><div class="admin-row-actions"><select aria-label="${escapeHtml(user.displayName)}的角色"><option value="customer">顾客</option><option value="staff">员工</option><option value="admin">管理员</option></select></div>`;
+    const select = $('select', row);
+    select.value = user.role;
+    select.disabled = user.id === state.user.id;
+    select.onchange = async () => {
+      const previous = user.role;
+      select.disabled = true;
+      try {
+        await api(`/api/admin/users/${user.id}/role`, { method: 'PATCH', body: JSON.stringify({ role: select.value }) });
+        user.role = select.value;
+        showToast(`${user.displayName} 已调整为${roleLabel(user.role)}`);
+        await loadAdminUsers($('#admin-user-search').value.trim());
+      } catch (error) {
+        select.value = previous;
+        select.disabled = false;
+        showToast(error.message);
+      }
+    };
+    return row;
+  }));
+}
+
+let adminPetSearchTimer;
+$('#admin-pet-search').oninput = (event) => {
+  clearTimeout(adminPetSearchTimer);
+  adminPetSearchTimer = setTimeout(() => loadAdminPets(event.target.value.trim()), 250);
+};
+
+async function loadAdminPets(query = '') {
+  if (!isAdmin()) return;
+  try {
+    state.adminPets = (await api(`/api/admin/pets${query ? `?query=${encodeURIComponent(query)}` : ''}`)).pets;
+    renderAdminPets();
+  } catch (error) {
+    $('#admin-pet-list').innerHTML = `<div class="panel empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function syncAdminOwnerOptions(selected = '') {
+  const ownerSelect = $('#admin-pet-owner');
+  ownerSelect.replaceChildren(...state.adminUsers.map((user) => option(user.id, `${user.displayName} · ${user.email}`)));
+  if (selected) ownerSelect.value = selected;
+}
+
+$('#add-admin-pet').onclick = async () => {
+  if (!state.adminUsers.length) await loadAdminUsers();
+  state.editingAdminPetId = null;
+  state.adminPetCreateRequestId = crypto.randomUUID();
+  const form = $('#admin-pet-form');
+  form.reset();
+  syncAdminOwnerOptions();
+  form.elements.ownerId.disabled = false;
+  $('#admin-pet-form-title').textContent = '新建宠物';
+  $('#admin-pet-error').textContent = '';
+  form.hidden = false;
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+$('#close-admin-pet-form').onclick = closeAdminPetForm;
+function closeAdminPetForm() {
+  state.editingAdminPetId = null;
+  state.adminPetCreateRequestId = null;
+  $('#admin-pet-form').hidden = true;
+  $('#admin-pet-error').textContent = '';
+}
+
+$('#admin-pet-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (form.dataset.submitting === 'true') return;
+  form.dataset.submitting = 'true';
+  const submit = $('button[type="submit"]', form);
+  submit.disabled = true;
+  const values = Object.fromEntries(new FormData(form));
+  const payload = { ...values, birthDate: values.birthDate || null, weightKg: values.weightKg ? Number(values.weightKg) : null };
+  if (state.editingAdminPetId) {
+    delete payload.ownerId;
+  } else {
+    payload.requestId = state.adminPetCreateRequestId || (state.adminPetCreateRequestId = crypto.randomUUID());
+  }
+  $('#admin-pet-error').textContent = '';
+  try {
+    await api(state.editingAdminPetId ? `/api/admin/pets/${state.editingAdminPetId}` : '/api/admin/pets', {
+      method: state.editingAdminPetId ? 'PATCH' : 'POST',
+      body: JSON.stringify(payload)
+    });
+    showToast(state.editingAdminPetId ? '宠物档案已更新' : '宠物档案已创建');
+    closeAdminPetForm();
+    await Promise.all([loadAdminPets($('#admin-pet-search').value.trim()), loadPets()]);
+  } catch (error) {
+    $('#admin-pet-error').textContent = error.message;
+  } finally {
+    form.dataset.submitting = 'false';
+    submit.disabled = false;
+  }
+};
+
+function renderAdminPets() {
+  const list = $('#admin-pet-list');
+  if (!state.adminPets.length) {
+    list.innerHTML = '<div class="panel empty">没有匹配的宠物。</div>';
+    return;
+  }
+  list.replaceChildren(...state.adminPets.map((pet) => {
+    const row = document.createElement('article');
+    row.className = 'admin-row';
+    row.innerHTML = `<div class="admin-row-main"><h3>${speciesIcon(pet.species)} ${escapeHtml(pet.name)}</h3><p>${escapeHtml(pet.breed || speciesLabel(pet.species))}${pet.weightKg ? ` · ${pet.weightKg} kg` : ''} · 主人：${escapeHtml(pet.ownerName || '未知')}</p></div><div class="admin-row-actions"><button data-edit>编辑</button><button class="danger" data-delete>删除</button></div>`;
+    $('[data-edit]', row).onclick = () => beginAdminPetEdit(pet);
+    $('[data-delete]', row).onclick = () => deleteAdminPet(pet);
+    return row;
+  }));
+}
+
+function beginAdminPetEdit(pet) {
+  state.editingAdminPetId = pet.id;
+  state.adminPetCreateRequestId = null;
+  const form = $('#admin-pet-form');
+  syncAdminOwnerOptions(pet.ownerId);
+  form.elements.ownerId.disabled = true;
+  for (const name of ['name', 'species', 'breed', 'sex', 'birthDate', 'weightKg']) form.elements[name].value = pet[name] ?? '';
+  $('#admin-pet-form-title').textContent = `编辑 ${pet.name}`;
+  $('#admin-pet-error').textContent = '';
+  form.hidden = false;
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function deleteAdminPet(pet) {
+  if (!confirm(`确定删除 ${pet.name} 的档案吗？存在预约或动态时无法删除。`)) return;
+  try {
+    await api(`/api/admin/pets/${pet.id}`, { method: 'DELETE' });
+    await Promise.all([loadAdminPets($('#admin-pet-search').value.trim()), loadPets()]);
+    showToast('宠物档案已删除');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+$('#refresh-admin-appointments').onclick = loadAdminAppointments;
+async function loadAdminAppointments() {
+  if (!isAdmin()) return;
+  try {
+    state.adminAppointments = (await api('/api/admin/appointments')).appointments;
+    renderAdminAppointments();
+  } catch (error) {
+    $('#admin-appointment-list').innerHTML = `<div class="panel empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderAdminAppointments() {
+  const list = $('#admin-appointment-list');
+  if (!state.adminAppointments.length) {
+    list.innerHTML = '<div class="panel empty">当前没有预约。</div>';
+    return;
+  }
+  list.replaceChildren(...state.adminAppointments.map((appointment) => {
+    const row = document.createElement('article');
+    const active = appointment.status === 'confirmed' && new Date(appointment.scheduledStart) > new Date();
+    row.className = 'admin-row';
+    row.innerHTML = `<div class="admin-row-main"><h3>${escapeHtml(serviceLabel(appointment.serviceCode))} · ${escapeHtml(appointment.petName)} <span class="tag">${appointment.status === 'cancelled' ? '已取消' : active ? '已确认' : '已结束'}</span></h3><p>${formatDateTime(appointment.scheduledStart)} · ${escapeHtml(appointment.ownerName || appointment.customerName)}${appointment.ownerEmail ? ` · ${escapeHtml(appointment.ownerEmail)}` : ''} · ${escapeHtml(appointment.customerPhone)}</p><p>预约号 ${escapeHtml(appointment.referenceCode)}${appointment.notes ? ` · ${escapeHtml(appointment.notes)}` : ''}</p></div><div class="admin-row-actions" ${active ? '' : 'hidden'}>${appointment.ownerId ? '<button data-edit>修改</button>' : ''}<button class="danger" data-cancel>取消</button></div>`;
+    $('[data-edit]', row)?.addEventListener('click', () => beginAdminAppointmentEdit(appointment));
+    $('[data-cancel]', row)?.addEventListener('click', () => cancelAdminAppointment(appointment));
+    return row;
+  }));
+}
+
+async function beginAdminAppointmentEdit(appointment) {
+  state.editingAdminAppointmentId = appointment.id;
+  const form = $('#admin-appointment-form');
+  let availablePets = state.adminPets;
+  if (!availablePets.some((pet) => pet.id === appointment.petId)) {
+    try {
+      availablePets = (await api('/api/admin/pets')).pets;
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
+  }
+  const pets = availablePets.filter((pet) => pet.ownerId === appointment.ownerId);
+  form.elements.petId.replaceChildren(...pets.map((pet) => option(pet.id, `${speciesIcon(pet.species)} ${pet.name}`)));
+  form.elements.petId.value = appointment.petId;
+  form.elements.date.value = localDate(new Date(appointment.scheduledStart));
+  form.elements.time.value = localTime(appointment.scheduledStart);
+  form.elements.serviceCode.value = appointment.serviceCode;
+  form.elements.customerName.value = appointment.customerName;
+  form.elements.customerPhone.value = appointment.customerPhone;
+  form.elements.notes.value = appointment.notes;
+  setAdminAppointmentDateBounds(form.elements.date);
+  $('#admin-appointment-owner').textContent = `${appointment.ownerName || appointment.customerName} · ${appointment.ownerEmail || appointment.customerPhone}`;
+  $('#admin-appointment-error').textContent = '';
+  $('#admin-appointment-dialog').showModal();
+}
+
+$('#close-admin-appointment').onclick = () => $('#admin-appointment-dialog').close();
+$('#admin-appointment-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form));
+  $('#admin-appointment-error').textContent = '';
+  try {
+    await api(`/api/admin/appointments/${state.editingAdminAppointmentId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    $('#admin-appointment-dialog').close();
+    await Promise.all([loadAdminAppointments(), loadAppointments()]);
+    showToast('预约已更新');
+  } catch (error) {
+    $('#admin-appointment-error').textContent = error.message;
+  }
+};
+
+async function cancelAdminAppointment(appointment) {
+  if (!confirm(`确定取消 ${appointment.petName} 在 ${formatDateTime(appointment.scheduledStart)} 的预约吗？`)) return;
+  try {
+    await api(`/api/admin/appointments/${appointment.id}/cancel`, { method: 'POST', body: '{}' });
+    await Promise.all([loadAdminAppointments(), loadAppointments()]);
+    showToast('预约已取消');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function setAdminAppointmentDateBounds(input) {
+  const today = new Date();
+  input.min = localDate(today);
+  input.max = localDate(new Date(today.getTime() + 30 * 864e5));
+}
+
 function actionButton(label, handler) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -782,8 +1074,14 @@ function option(value, label) {
 function speciesIcon(species) { return species === 'dog' ? '🐶' : species === 'cat' ? '🐱' : '🐾'; }
 function speciesLabel(species) { return species === 'dog' ? '狗狗' : species === 'cat' ? '猫咪' : '其他宠物'; }
 function serviceLabel(code) { return ({ basic_wash: '基础洗护', deep_care: '深度护理', wash_and_style: '洗护造型' })[code] || code; }
+function hasStaffAccess(role) { return role === 'staff' || role === 'admin'; }
+function isAdmin() { return state.user?.role === 'admin'; }
+function roleLabel(role) { return ({ customer: '顾客', staff: '员工', admin: '管理员' })[role] || role; }
+function roleSuffix(role) { return role === 'customer' ? '' : ` · ${roleLabel(role)}`; }
+function roleTag(role) { return role === 'customer' ? '' : `<span class="role-tag ${role === 'admin' ? 'admin' : ''}">${roleLabel(role)}</span>`; }
 function localDate(date) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(date); }
 function localTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value)); }
+function formatDate(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value)); }
 function formatDateTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value)); }
 function escapeHtml(value) { const node = document.createElement('div'); node.textContent = String(value ?? ''); return node.innerHTML; }
 

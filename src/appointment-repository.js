@@ -6,6 +6,12 @@ const publicColumns = `
   cancelled_at, created_at, updated_at
 `;
 
+const adminColumns = `
+  a.id, a.reference_code, a.owner_id, a.pet_id, a.pet_code, a.pet_name, a.pet_species,
+  a.service_code, a.scheduled_start, a.customer_name, a.customer_phone, a.notes, a.status,
+  a.cancelled_at, a.created_at, a.updated_at, p.display_name as owner_name, p.email as owner_email
+`;
+
 export function createAppointmentRepository(pool) {
   return {
     async health() {
@@ -78,6 +84,32 @@ export function createAppointmentRepository(pool) {
       return result.rows.map(mapRow);
     },
 
+    async listAll() {
+      const db = requirePool(pool);
+      const result = await db.query(
+        `select ${adminColumns}
+         from public.grooming_appointments a
+         left join public.profiles p on p.id = a.owner_id
+         order by
+           case when a.status = 'confirmed' and a.scheduled_start >= now() then 0
+                when a.status = 'confirmed' then 1 else 2 end,
+           a.scheduled_start asc`
+      );
+      return result.rows.map(mapRow);
+    },
+
+    async getById(id) {
+      const db = requirePool(pool);
+      const result = await db.query(
+        `select ${adminColumns}
+         from public.grooming_appointments a
+         left join public.profiles p on p.id = a.owner_id
+         where a.id = $1`,
+        [id]
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
+    },
+
     async update(id, input, ownerId, pet) {
       const db = requirePool(pool);
       const result = await db.query(
@@ -96,6 +128,22 @@ export function createAppointmentRepository(pool) {
       return result.rows[0] ? mapRow(result.rows[0]) : null;
     },
 
+    async updateAsAdmin(id, input, pet) {
+      const db = requirePool(pool);
+      const result = await db.query(
+        `update public.grooming_appointments set
+           pet_id = $2, pet_code = $2, pet_name = $3, pet_species = $4, service_code = $5,
+           scheduled_start = $6, customer_name = $7, customer_phone = $8, notes = $9
+         where id = $1 and status = 'confirmed' and scheduled_start > now()
+         returning ${publicColumns}`,
+        [
+          id, pet.id, pet.name, pet.species, input.serviceCode, input.scheduledStart,
+          input.customerName, input.customerPhone, input.notes
+        ]
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
+    },
+
     async cancel(id, ownerId) {
       const db = requirePool(pool);
       const result = await db.query(
@@ -107,6 +155,18 @@ export function createAppointmentRepository(pool) {
         [id, ownerId]
       );
       return result.rows[0] ? mapRow(result.rows[0]) : null;
+    },
+
+    async cancelAsAdmin(id) {
+      const db = requirePool(pool);
+      const result = await db.query(
+        `update public.grooming_appointments
+         set status = 'cancelled', cancelled_at = now()
+         where id = $1 and status = 'confirmed' and scheduled_start > now()
+         returning ${publicColumns}`,
+        [id]
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
     }
   };
 }
@@ -116,6 +176,8 @@ function mapRow(row) {
     id: row.id,
     referenceCode: row.reference_code,
     ownerId: row.owner_id,
+    ownerName: row.owner_name || '',
+    ownerEmail: row.owner_email || '',
     petId: row.pet_id,
     petCode: row.pet_code,
     petName: row.pet_name,

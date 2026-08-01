@@ -18,9 +18,11 @@ import {
   SLOT_TIMES,
   localNow,
   parseBookableDate,
+  validateAdminUpdatePayload,
   validateCreatePayload,
   validateUpdatePayload
 } from './booking-rules.js';
+import { hasAdminAccess, hasStaffAccess, ROLES } from './roles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -38,6 +40,7 @@ const petSchema = z.object({
   birthDate: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal(''), z.null()]).optional(),
   weightKg: z.union([z.number().positive().max(9999), z.null()]).optional()
 });
+const petCreateSchema = petSchema.extend({ requestId: uuidSchema.optional() });
 const postSchema = z.object({
   petId: z.string().uuid('宠物标识无效'),
   phase: z.enum(['before', 'after'], { error: '请选择养护前或养护后' }),
@@ -51,6 +54,8 @@ const moderationSchema = z.object({
   status: z.enum(['published', 'hidden']),
   reason: z.string().trim().max(300, '审核原因不能超过 300 字').default('')
 });
+const roleUpdateSchema = z.object({ role: z.enum(ROLES) });
+const adminPetCreateSchema = petCreateSchema.extend({ ownerId: uuidSchema });
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 6, fileSize: 8 * 1024 * 1024, fields: 20, fieldSize: 64 * 1024 }
@@ -132,6 +137,32 @@ export function createApp({
     response.json({ user: request.actor ? publicActor(request.actor) : null });
   });
 
+  app.get('/api/admin/users', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '用户资料服务尚未配置');
+      const query = String(request.query.query || '').trim().slice(0, 80);
+      response.json({ users: await identityRepository.listUsers(query) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/admin/users/:id/role', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '用户资料服务尚未配置');
+      validateUuid(request.params.id);
+      const { role } = parse(roleUpdateSchema, request.body);
+      if (request.params.id === request.actor.id && role !== 'admin') {
+        throw conflict('不能降低当前登录管理员的权限');
+      }
+      const user = await identityRepository.updateUserRole(request.actor.id, request.params.id, role);
+      if (!user) return response.status(404).json({ error: '用户不存在' });
+      return response.json({ user: publicActor(user) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/pets', requireActor, async (request, response, next) => {
     try {
       requireDependency(identityRepository, '宠物资料服务尚未配置');
@@ -144,8 +175,13 @@ export function createApp({
 
   app.post('/api/pets', requireActor, async (request, response, next) => {
     try {
-      const input = normalizePet(parse(petSchema, request.body));
-      const pet = await identityRepository.createPet(request.actor.id, input);
+      const { requestId, ...petInput } = parse(petCreateSchema, request.body);
+      const pet = await identityRepository.createPet(
+        request.actor.id,
+        normalizePet(petInput),
+        requestId || crypto.randomUUID()
+      );
+      if (!pet) throw conflict('请求标识已被使用');
       response.status(201).json({ pet });
     } catch (error) {
       next(error);
@@ -169,6 +205,58 @@ export function createApp({
       validateUuid(request.params.id);
       const deleted = await identityRepository.deletePet(request.params.id, request.actor.id);
       if (!deleted) return response.status(404).json({ error: '宠物不存在或无权删除' });
+      return response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/admin/pets', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '宠物资料服务尚未配置');
+      const query = String(request.query.query || '').trim().slice(0, 80);
+      response.json({ pets: await identityRepository.listPets(request.actor, query) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/admin/pets', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '宠物资料服务尚未配置');
+      const { ownerId, requestId, ...petInput } = parse(adminPetCreateSchema, request.body);
+      if (!await identityRepository.getProfile(ownerId)) return response.status(404).json({ error: '宠物主人不存在' });
+      const pet = await identityRepository.createPet(
+        ownerId,
+        normalizePet(petInput),
+        requestId || crypto.randomUUID()
+      );
+      if (!pet) throw conflict('请求标识已被使用');
+      response.status(201).json({ pet });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/admin/pets/:id', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '宠物资料服务尚未配置');
+      validateUuid(request.params.id);
+      const input = normalizePet(parse(petSchema, request.body));
+      const pet = await identityRepository.updatePetAsAdmin(request.params.id, input);
+      if (!pet) return response.status(404).json({ error: '宠物不存在' });
+      return response.json({ pet });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/admin/pets/:id', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '宠物资料服务尚未配置');
+      validateUuid(request.params.id);
+      const deleted = await identityRepository.deletePetAsAdmin(request.params.id);
+      if (!deleted) return response.status(404).json({ error: '宠物不存在' });
       return response.status(204).end();
     } catch (error) {
       next(error);
@@ -229,6 +317,43 @@ export function createApp({
     try {
       validateUuid(request.params.id);
       const appointment = await repository.cancel(request.params.id, request.actor.id);
+      if (!appointment) return response.status(404).json({ error: '预约不存在或当前不可取消' });
+      return response.json({ appointment });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/admin/appointments', requireAdmin, async (_request, response, next) => {
+    try {
+      response.json({ appointments: await repository.listAll() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/admin/appointments/:id', requireAdmin, async (request, response, next) => {
+    try {
+      requireDependency(identityRepository, '宠物资料服务尚未配置');
+      validateUuid(request.params.id);
+      const current = await repository.getById(request.params.id);
+      if (!current) return response.status(404).json({ error: '预约不存在' });
+      const input = validateAdminUpdatePayload(request.body, now());
+      const pet = await identityRepository.getPet(input.petId);
+      if (!pet) return response.status(404).json({ error: '宠物不存在' });
+      if (pet.ownerId !== current.ownerId) throw forbidden('预约只能选择该顾客的宠物');
+      const appointment = await repository.updateAsAdmin(current.id, input, pet);
+      if (!appointment) return response.status(404).json({ error: '预约不存在或当前不可修改' });
+      return response.json({ appointment });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/admin/appointments/:id/cancel', requireAdmin, async (request, response, next) => {
+    try {
+      validateUuid(request.params.id);
+      const appointment = await repository.cancelAsAdmin(request.params.id);
       if (!appointment) return response.status(404).json({ error: '预约不存在或当前不可取消' });
       return response.json({ appointment });
     } catch (error) {
@@ -307,7 +432,7 @@ export function createApp({
       validateUuid(request.params.id);
       const post = await communityRepository.getPost(request.params.id);
       if (!post) return response.status(404).json({ error: '动态不存在' });
-      if (post.authorId !== request.actor.id && request.actor.role !== 'staff') {
+      if (post.authorId !== request.actor.id && !hasStaffAccess(request.actor.role)) {
         return response.status(403).json({ error: '无权删除这条动态' });
       }
       const paths = await communityRepository.deletePost(post.id);
@@ -387,7 +512,7 @@ export function createApp({
       validateUuid(request.params.id);
       const comment = await communityRepository.getComment(request.params.id);
       if (!comment) return response.status(404).json({ error: '评论不存在' });
-      if (comment.authorId !== request.actor.id && request.actor.role !== 'staff') {
+      if (comment.authorId !== request.actor.id && !hasStaffAccess(request.actor.role)) {
         return response.status(403).json({ error: '无权删除这条评论' });
       }
       await communityRepository.deleteComment(comment.id);
@@ -451,7 +576,13 @@ function requireActor(request, response, next) {
 
 function requireStaff(request, response, next) {
   if (!request.actor) return response.status(401).json({ error: '请先登录' });
-  if (request.actor.role !== 'staff') return response.status(403).json({ error: '仅员工可以执行审核操作' });
+  if (!hasStaffAccess(request.actor.role)) return response.status(403).json({ error: '仅员工可以执行审核操作' });
+  return next();
+}
+
+function requireAdmin(request, response, next) {
+  if (!request.actor) return response.status(401).json({ error: '请先登录' });
+  if (!hasAdminAccess(request.actor.role)) return response.status(403).json({ error: '仅管理员可以执行此操作' });
   return next();
 }
 
@@ -471,7 +602,7 @@ async function permittedPet(identityRepository, actor, petId) {
   requireDependency(identityRepository, '宠物资料服务尚未配置');
   const pet = await identityRepository.getPet(petId);
   if (!pet) throw notFound('宠物不存在');
-  if (actor.role !== 'staff' && pet.ownerId !== actor.id) throw forbidden('只能选择自己的宠物');
+  if (!hasStaffAccess(actor.role) && pet.ownerId !== actor.id) throw forbidden('只能选择自己的宠物');
   return pet;
 }
 
@@ -486,7 +617,7 @@ async function ownedPet(identityRepository, actor, petId) {
 async function readablePost(repository, id, actor) {
   const post = await repository.getPost(id);
   if (!post) return null;
-  if (post.status === 'published' || actor?.role === 'staff' || actor?.id === post.authorId) return post;
+  if (post.status === 'published' || hasStaffAccess(actor?.role) || actor?.id === post.authorId) return post;
   return null;
 }
 
@@ -498,8 +629,8 @@ function serializePost(post, actor, imageStorage) {
       url: imageStorage ? imageStorage.publicUrl(objectPath) : ''
     })),
     canEdit: Boolean(actor && actor.id === post.authorId),
-    canDelete: Boolean(actor && (actor.id === post.authorId || actor.role === 'staff')),
-    canModerate: actor?.role === 'staff'
+    canDelete: Boolean(actor && (actor.id === post.authorId || hasStaffAccess(actor.role))),
+    canModerate: hasStaffAccess(actor?.role)
   };
 }
 
@@ -507,8 +638,8 @@ function serializeComment(comment, actor) {
   return {
     ...comment,
     canEdit: Boolean(actor && actor.id === comment.authorId),
-    canDelete: Boolean(actor && (actor.id === comment.authorId || actor.role === 'staff')),
-    canModerate: actor?.role === 'staff'
+    canDelete: Boolean(actor && (actor.id === comment.authorId || hasStaffAccess(actor.role))),
+    canModerate: hasStaffAccess(actor?.role)
   };
 }
 
@@ -587,6 +718,10 @@ function requireDependency(value, message) {
 
 function badRequest(message) {
   return Object.assign(new Error(message), { status: 400 });
+}
+
+function conflict(message) {
+  return Object.assign(new Error(message), { status: 409 });
 }
 
 function forbidden(message) {

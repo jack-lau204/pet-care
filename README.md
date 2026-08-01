@@ -12,7 +12,7 @@
 
 不要将 `DATABASE_URL` 或 `SUPABASE_SERVICE_ROLE_KEY` 放进浏览器代码、提交到 Git，或使用 `SUPABASE_SERVICE_ROLE_KEY` 作为前端配置。
 
-## 员工账号
+## 员工与管理员账号
 
 用户在应用中填写昵称、邮箱和密码后会直接完成注册并登录，不需要邮件确认。密码使用带随机盐的 `scrypt` 哈希保存，浏览器只接收随机的 HttpOnly 会话 Cookie。
 
@@ -26,6 +26,16 @@ where email = 'staff@example.com';
 
 员工可查询全部宠物、为任意宠物发布动态，并隐藏、恢复或删除动态和评论。顾客只能管理自己的宠物和内容。
 
+管理员继承全部员工权限，并可通过站内“管理后台”调整用户角色、管理全部未来预约，以及为指定用户增改删宠物档案。首位管理员需要先注册普通账号，再由维护者在 SQL Editor 中提升：
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'admin@example.com';
+```
+
+管理员可以授予或撤销其他管理员，但不能在管理后台降低自己的权限。账号停用、账号删除和宠物主人转移不在当前管理范围内。
+
 ## 接口
 
 - 认证：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/session`
@@ -33,8 +43,13 @@ where email = 'staff@example.com';
 - 动态：`GET/POST /api/posts`、`PATCH/DELETE /api/posts/:id`、`POST /api/posts/:id/moderation`
 - 评论：`GET/POST /api/posts/:id/comments`、`PATCH/DELETE /api/comments/:id`、`POST /api/comments/:id/moderation`
 - 预约：`GET /api/appointments/availability`、`GET/POST /api/appointments`、`PATCH /api/appointments/:id`、`POST /api/appointments/:id/cancel`
+- 管理员用户：`GET /api/admin/users`、`PATCH /api/admin/users/:id/role`
+- 管理员宠物：`GET/POST /api/admin/pets`、`PATCH/DELETE /api/admin/pets/:id`
+- 管理员预约：`GET /api/admin/appointments`、`PATCH /api/admin/appointments/:id`、`POST /api/admin/appointments/:id/cancel`
 
 动态图片通过 `multipart/form-data` 的 `images` 字段上传，每条最多 6 张、单张最大 8 MB。服务端验证 JPEG/PNG/WebP 实际内容，将最长边限制为 2048 像素并转换成 WebP。
+
+新建宠物接口接受可选 UUID `requestId` 作为幂等键。站内表单会自动生成并在网络重试时复用该值，避免重复点击或响应丢失造成多条宠物记录。
 
 旧匿名预约记录会保留在数据库中，但不会自动归属或显示到新账号。新预约必须登录并选择当前顾客自己的宠物。
 
