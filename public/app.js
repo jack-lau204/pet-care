@@ -661,30 +661,45 @@ async function prepareBooking() {
 }
 
 $('#booking-date').onchange = loadSlots;
+let slotLoadVersion = 0;
 async function loadSlots(preselect = '') {
+  if (typeof preselect !== 'string') preselect = '';
   const date = $('#booking-date').value;
   const grid = $('#slot-grid');
+  const loadVersion = ++slotLoadVersion;
   $('#booking-time').value = '';
   grid.textContent = '';
   if (!date) return;
   $('#slot-help').textContent = '正在查询…';
-  try {
-    const result = await api(`/api/appointments/availability?date=${encodeURIComponent(date)}`);
-    result.slots.forEach((slot) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = slot.time;
-      button.disabled = !slot.available && slot.time !== preselect;
-      button.onclick = () => {
-        $('#booking-time').value = slot.time;
-        $$('#slot-grid button').forEach((item) => item.classList.toggle('selected', item === button));
-      };
-      grid.append(button);
-      if (slot.time === preselect && !button.disabled) button.click();
-    });
-    $('#slot-help').textContent = '灰色时段不可预约';
-  } catch (error) {
-    $('#slot-help').textContent = error.message;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await api(`/api/appointments/availability?date=${encodeURIComponent(date)}`);
+      if (loadVersion !== slotLoadVersion) return;
+      result.slots.forEach((slot) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = slot.time;
+        button.disabled = !slot.available && slot.time !== preselect;
+        button.onclick = () => {
+          $('#booking-time').value = slot.time;
+          $$('#slot-grid button').forEach((item) => item.classList.toggle('selected', item === button));
+        };
+        grid.append(button);
+        if (slot.time === preselect && !button.disabled) button.click();
+      });
+      $('#slot-help').textContent = '灰色时段不可预约';
+      return;
+    } catch (error) {
+      if (loadVersion !== slotLoadVersion) return;
+      if (error.status === 503 && attempt === 0) {
+        $('#slot-help').textContent = '连接暂时不稳定，正在重试…';
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      $('#slot-help').textContent = error.message;
+      return;
+    }
   }
 }
 

@@ -6,11 +6,13 @@
 
 1. 复制 `.env.example` 为 `.env`。
 2. 在 Supabase **Connect → Transaction pooler** 中复制端口为 `6543` 的连接串，填写 `DATABASE_URL`。
-3. 从 Supabase **Project Settings → API** 填写图片 Storage 使用的 `SUPABASE_URL` 和仅供服务端使用的 `SUPABASE_SERVICE_ROLE_KEY`。
+3. 从 Supabase **Project Settings → API Keys** 填写图片 Storage 使用的 `SUPABASE_URL` 和仅供服务端使用的 `SUPABASE_SECRET_KEY`。旧部署可暂时继续使用 `SUPABASE_SERVICE_ROLE_KEY`，但新 Secret key 优先。
 4. 在 Supabase SQL Editor 按文件名顺序执行 `supabase/migrations` 下的迁移。迁移会创建本地账号、哈希会话、宠物、动态、评论表及 `care-dynamics` Storage bucket。
 5. 运行 `pnpm install`、`pnpm dev`，打开 `http://localhost:3000`。
 
-不要将 `DATABASE_URL` 或 `SUPABASE_SERVICE_ROLE_KEY` 放进浏览器代码、提交到 Git，或使用 `SUPABASE_SERVICE_ROLE_KEY` 作为前端配置。
+不要将 `DATABASE_URL`、`SUPABASE_SECRET_KEY` 或 `SUPABASE_SERVICE_ROLE_KEY` 放进浏览器代码或提交到 Git，也不要将高权限 key 用作前端配置。`SUPABASE_SECRET_KEY` 和旧版 `SUPABASE_SERVICE_ROLE_KEY` 都会绕过 RLS。
+
+服务会保留一个数据库热连接，并在连接暂时中断时对只读查询重试一次。跨区域网络较慢时，可通过服务端环境变量 `DB_CONNECT_TIMEOUT_MS` 调整建连超时，默认值为 `15000` 毫秒。
 
 ## 员工与管理员账号
 
@@ -57,3 +59,10 @@ where email = 'admin@example.com';
 
 - `pnpm test`：运行接口权限、预约规则、静态页面和真实图片转换测试。
 - `pnpm check`：执行服务端、浏览器脚本语法检查和全部自动化测试。
+- `pnpm check:supabase`：使用服务端环境变量执行数据库 `SELECT 1`，并只读检查 `care-dynamics` Storage bucket；不会创建、修改或删除数据。
+
+## GitHub Actions
+
+仓库的 CI 会在 Pull Request 中运行不带 Secrets 的 `pnpm check`。只有推送到 `main` 或从 Actions 页面手动触发时，才会把 Repository Secrets 中的 `DATABASE_URL`、`SUPABASE_URL` 和 `SUPABASE_SECRET_KEY` 注入只读 Supabase 检查步骤。
+
+CI 不注入旧版 `SUPABASE_SERVICE_ROLE_KEY`。服务端代码仍保留该变量名作为迁移期间的兼容回退，但应优先配置 `SUPABASE_SECRET_KEY`。

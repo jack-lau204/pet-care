@@ -18,6 +18,9 @@ const app = createApp({ repository, identityRepository, communityRepository, aut
 const server = app.listen(port, () => {
   console.log(`宠物养护服务已启动：http://localhost:${port}`);
   if (!pool) console.warn('DATABASE_URL 未配置，预约接口将返回 503');
+  else repository.health().catch((error) => {
+    console.warn('数据库连接预热失败，将在首次请求时自动重试', error.message);
+  });
   if (!imageStorage) console.warn('Supabase Storage 环境变量未配置，图片功能将返回 503');
 });
 

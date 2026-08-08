@@ -130,6 +130,20 @@ test('serves health, availability, and the complete application page', async () 
   await request(app).get('/app.js').expect(200).expect('Content-Type', /javascript/);
 });
 
+test('returns a stable message when availability cannot reach the database', async (context) => {
+  context.mock.method(console, 'error', () => {});
+  const app = buildApp({
+    repository: fakeAppointmentRepository({
+      bookedStarts: async () => { throw new Error('Connection terminated due to connection timeout'); }
+    })
+  });
+
+  await request(app)
+    .get('/api/appointments/availability?date=2026-07-14')
+    .expect(503)
+    .expect(({ body }) => assert.equal(body.error, '数据库连接暂时不稳定，请稍后重试'));
+});
+
 test('sets HttpOnly session cookies and exposes the current profile', async () => {
   const app = buildApp();
   const response = await request(app).post('/api/auth/login').send({ email: 'jack@example.com', password: 'password123' }).expect(200);
