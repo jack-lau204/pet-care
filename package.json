@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
+    "check:supabase": "node scripts/check-supabase.js",
     "check": "node --check src/server.js && node --check src/app.js && node --check public/app.js && node --test"
   },
   "engines": {

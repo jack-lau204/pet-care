@@ -6,10 +6,12 @@ const allowedFormats = new Set(['jpeg', 'png', 'webp']);
 
 export function createStorageClient({
   url = process.env.SUPABASE_URL,
+  secretKey = process.env.SUPABASE_SECRET_KEY,
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 } = {}) {
-  if (!url || !serviceRoleKey) return null;
-  return createClient(url, serviceRoleKey, {
+  const serverKey = secretKey || serviceRoleKey;
+  if (!url || !serverKey) return null;
+  return createClient(url, serverKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
   });
 }

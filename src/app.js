@@ -22,6 +22,7 @@ import {
   validateCreatePayload,
   validateUpdatePayload
 } from './booking-rules.js';
+import { isTransientDatabaseError } from './db.js';
 import { hasAdminAccess, hasStaffAccess, ROLES } from './roles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -551,6 +552,10 @@ export function createApp({
     }
     if (error?.code === '23503') return response.status(409).json({ error: '该记录已被预约或动态使用，暂不能删除' });
     if (error?.code === '42P01') return response.status(503).json({ error: '数据库迁移尚未完成，请先执行最新迁移' });
+    if (isTransientDatabaseError(error)) {
+      console.error(error);
+      return response.status(503).json({ error: '数据库连接暂时不稳定，请稍后重试' });
+    }
     const status = error.status || (isDatabaseError(error) ? 503 : 500);
     if (status >= 500) console.error(error);
     return response.status(status).json({

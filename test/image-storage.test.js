@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import { createImageStorage } from '../src/image-storage.js';
+import { createImageStorage, createStorageClient } from '../src/image-storage.js';
 
 function fakeSupabase(captured) {
   return {
@@ -27,6 +27,21 @@ function fakeSupabase(captured) {
     }
   };
 }
+
+test('prefers the new Supabase secret key and supports the legacy service role key', () => {
+  const url = 'https://project-ref.supabase.co';
+  const preferred = createStorageClient({
+    url,
+    secretKey: 'sb_secret_preferred',
+    serviceRoleKey: 'legacy-service-role-key'
+  });
+  const legacy = createStorageClient({ url, serviceRoleKey: 'legacy-service-role-key' });
+
+  assert.equal(preferred.supabaseKey, 'sb_secret_preferred');
+  assert.equal(legacy.supabaseKey, 'legacy-service-role-key');
+  assert.equal(createStorageClient({ url, secretKey: '', serviceRoleKey: '' }), null);
+  assert.equal(createStorageClient({ url: '', secretKey: 'sb_secret_without_url' }), null);
+});
 
 test('validates, rotates, resizes, and converts uploaded photos to WebP', async () => {
   const captured = {};

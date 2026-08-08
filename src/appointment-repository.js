@@ -1,4 +1,4 @@
-import { requirePool } from './db.js';
+import { queryWithRetry, requirePool } from './db.js';
 
 const publicColumns = `
   id, reference_code, owner_id, pet_id, pet_code, pet_name, pet_species, service_code,
@@ -15,14 +15,13 @@ const adminColumns = `
 export function createAppointmentRepository(pool) {
   return {
     async health() {
-      const db = requirePool(pool);
-      const result = await db.query('select now() as now');
+      const result = await queryWithRetry(pool, 'select now() as now');
       return result.rows[0];
     },
 
     async bookedStarts(dayStart, dayEnd) {
-      const db = requirePool(pool);
-      const result = await db.query(
+      const result = await queryWithRetry(
+        pool,
         `select scheduled_start from public.grooming_appointments
          where status = 'confirmed' and scheduled_start >= $1 and scheduled_start < $2`,
         [dayStart, dayEnd]

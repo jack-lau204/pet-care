@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.*.local
+backup.env
 npm-debug.log*
 pnpm-debug.log*
 *.log

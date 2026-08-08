@@ -2,6 +2,16 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+const TRANSIENT_NETWORK_CODES = new Set([
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENETRESET',
+  'ENETUNREACH',
+  'EPIPE',
+  'ETIMEDOUT'
+]);
+
 export function createPool(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) return null;
 
@@ -22,13 +32,22 @@ export function createPool(connectionString = process.env.DATABASE_URL) {
   url.searchParams.set('uselibpqcompat', 'true');
   url.searchParams.set('sslmode', 'require');
 
-  return new Pool({
+  const pool = new Pool({
     connectionString: url.toString(),
     max: Number(process.env.DB_POOL_MAX || 5),
+    min: 1,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 8_000,
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 15_000),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     application_name: 'pet-care-booking-api'
   });
+
+  pool.on('error', (error) => {
+    console.warn('数据库空闲连接已断开，连接池将在下次请求时重建连接', error.message);
+  });
+
+  return pool;
 }
 
 export function requirePool(pool) {
@@ -36,4 +55,28 @@ export function requirePool(pool) {
   const error = new Error('数据库尚未配置');
   error.status = 503;
   throw error;
+}
+
+export async function queryWithRetry(pool, text, values, retries = 1) {
+  const db = requirePool(pool);
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await db.query(text, values);
+    } catch (error) {
+      if (attempt >= retries || !isTransientDatabaseError(error)) throw error;
+      attempt += 1;
+    }
+  }
+}
+
+export function isTransientDatabaseError(error) {
+  const code = String(error?.code || '');
+  return TRANSIENT_NETWORK_CODES.has(code)
+    || code.startsWith('08')
+    || ['57P01', '57P02', '57P03'].includes(code)
+    || /connection (?:terminated|timeout)|terminating connection|server closed the connection|socket hang up/i.test(
+      error?.message || ''
+    );
 }
