@@ -1,23 +1,38 @@
-pipeline {
+def pipelineScript
 
+pipeline {
     agent any
 
     stages {
-        stage("build") {
+        stage('Initialize') {
             steps {
-              echo 'building the application ...'
+                script {
+                    pipelineScript = load 'script.groovy'
+                }
             }
         }
 
-        stage("test") {
-             steps {
-              echo 'testing the application ...'
+        stage('Build') {
+            steps {
+                script {
+                    pipelineScript.buildApp()
+                }
             }
         }
 
-         stage("deploy") {
-             steps {
-              echo 'deploying the application ...'
+        stage('Test') {
+            steps {
+                script {
+                    pipelineScript.testApp()
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    pipelineScript.deployApp()
+                }
             }
         }
     }
