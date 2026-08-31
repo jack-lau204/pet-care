@@ -1,11 +1,15 @@
 def buildApp() {
+    echo 'Using the configured Node.js toolchain...'
+    runCommand('node --version')
+    runCommand('pnpm --version')
+
     echo 'Installing application dependencies...'
-    runCommand('corepack pnpm install --frozen-lockfile')
+    runCommand('pnpm install --frozen-lockfile')
 }
 
 def testApp() {
     echo 'Running application checks...'
-    runCommand('corepack pnpm check')
+    runCommand('pnpm check')
 }
 
 def deployApp() {

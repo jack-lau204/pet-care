@@ -3,6 +3,10 @@ def pipelineScript
 pipeline {
     agent any
 
+    tools {
+        nodejs 'NodeJS 24'
+    }
+
     stages {
         stage('Initialize') {
             steps {
